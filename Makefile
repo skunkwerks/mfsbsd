@@ -7,16 +7,20 @@
 # User-defined variables
 #
 BASE?=			/cdrom/usr/freebsd-dist
+ABI?=			FreeBSD:13:amd64
+ARCH?=			amd64
+VERSION?=		13.1-RELEASE
+SITE?=			https://download.freebsd.org/ftp/releases/${ARCH}/${VERSION}
+BASE?=			/cdrom/usr/freebsd-dist
 KERNCONF?=		GENERIC
 MFSROOT_FREE_INODES?=	10%
 MFSROOT_FREE_BLOCKS?=	10%
-MFSROOT_MAXSIZE?=	120m
-ROOTPW_HASH?=		$$6$$051DdQA7fTvLymkY$$Z5f6snVFQJKugWmGi8y0motBNaKn9em0y2K0ZsJMku3v9gkiYh8M.OTIIie3RvHpzT6udumtZUtc0kXwJcCMR1
-
+MFSROOT_MAXSIZE?=	500m
+ROOTPW_HASH?=		$$6$$MzpVDVXcp2xchtXm$$2JxreWOCaz2XSFbpBhiOKDfb/MTcTfqzE6YRJGj.H9TYVHzB0JfArrURbQvsahhGBwZlZHwbA.XSjDoaSy6fY1
 # If you want to build your own kernel and make you own world, you need to set
 # -DCUSTOM or CUSTOM=1
 #
-# To make buildworld use 
+# To make buildworld use
 # -DCUSTOM -DBUILDWORLD or CUSTOM=1 BUILDWORLD=1
 #
 # To make buildkernel use
@@ -90,7 +94,7 @@ MFSMODULES?=	aesni crypto cryptodev ext2fs geom_eli geom_mirror geom_nop \
 # Sometimes the kernel is compiled with a different destination.
 KERNDIR?=	kernel
 #
-XZ_FLAGS?=
+XZ_FLAGS?=-9T0
 #
 
 .if defined(V)
@@ -439,7 +443,7 @@ ${WRKDIR}/.config_done:
 .elif !empty(ROOTPW_HASH)
 	${_v}echo '${ROOTPW_HASH}'| ${PW} -V ${_DESTDIR}/etc usermod root -H 0
 .endif
-	${_v}echo PermitRootLogin yes >> ${_DESTDIR}/etc/ssh/sshd_config
+	${_v}echo PermitRootLogin prohibit-password >> ${_DESTDIR}/etc/ssh/sshd_config
 .if exists(${CFGDIR}/hosts)
 	${_v}${INSTALL} -m 0644 ${CFGDIR}/hosts ${_DESTDIR}/etc/hosts
 .elif exists(${CFGDIR}/hosts.sample)
@@ -454,7 +458,6 @@ genkeys: config ${WRKDIR}/.genkeys_done
 ${WRKDIR}/.genkeys_done:
 	@echo -n "Generating SSH host keys ..."
 	${_v}test -f ${_DESTDIR}/etc/ssh/ssh_host_key || ${SSHKEYGEN} -t rsa1 -b 1024 -f ${_DESTDIR}/etc/ssh/ssh_host_key -N '' > /dev/null 2> /dev/null || true
-	${_v}test -f ${_DESTDIR}/etc/ssh/ssh_host_dsa_key || ${SSHKEYGEN} -t dsa -f ${_DESTDIR}/etc/ssh/ssh_host_dsa_key -N '' > /dev/null 2> /dev/null || true
 	${_v}test -f ${_DESTDIR}/etc/ssh/ssh_host_rsa_key || ${SSHKEYGEN} -t rsa -f ${_DESTDIR}/etc/ssh/ssh_host_rsa_key -N '' > /dev/null
 	${_v}test -f ${_DESTDIR}/etc/ssh/ssh_host_ecdsa_key || ${SSHKEYGEN} -t ecdsa -f ${_DESTDIR}/etc/ssh/ssh_host_ecdsa_key -N '' > /dev/null
 	${_v}test -f ${_DESTDIR}/etc/ssh/ssh_host_ed25519_key || ${SSHKEYGEN} -t ed25519 -f ${_DESTDIR}/etc/ssh/ssh_host_ed25519_key -N '' > /dev/null
@@ -486,8 +489,8 @@ compress-usr: install prune cdboot config genkeys customfiles customscripts boot
 ${WRKDIR}/.compress-usr_done:
 .if defined(NO_ROOTHACK)
 	@echo -n "Compressing usr ..."
-	${_v}${TAR} -c -J -C ${_DESTDIR} -f ${_DESTDIR}/.usr.tar.xz usr 
-	${_v}${RM} -rf ${_DESTDIR}/usr && ${MKDIR} ${_DESTDIR}/usr 
+	${_v}${TAR} -c -J -C ${_DESTDIR} -f ${_DESTDIR}/.usr.tar.xz usr
+	${_v}${RM} -rf ${_DESTDIR}/usr && ${MKDIR} ${_DESTDIR}/usr
 .else
 	@echo -n "Compressing root ..."
 	${_v}${TAR} -c -C ${_ROOTDIR} -f - rw | \
@@ -666,3 +669,49 @@ clean:
 	fi
 
 clean-all: clean clean-roothack clean-pkgcache
+metal: fetch base pkg all
+	@echo remember to run "make dist" to push the artefacts upstream
+
+fetch:
+	${_v}test -d ${BASE} || mkdir -p ${BASE}
+	${_v}fetch ${SITE}/MANIFEST -o - | egrep 'base.txz|kernel.txz' > ${BASE}/MANIFEST
+	${_v}test -f ${BASE}/base.txz   || fetch -o ${BASE}/ ${SITE}/base.txz
+	${_v}test -f ${BASE}/kernel.txz || fetch -o ${BASE}/ ${SITE}/kernel.txz
+
+base:
+	@rm -rf ./customfiles/usr/freebsd-dist
+	@mkdir ./customfiles/usr/freebsd-dist
+	@cp ${BASE}/base.txz ${BASE}/kernel.txz ./customfiles/usr/freebsd-dist/
+	# include only base and kernel so that bsdinstall doesn't complain
+	# about missing archives
+	@egrep '(base|kernel).txz' ${BASE}/MANIFEST > ./customfiles/usr/freebsd-dist/MANIFEST
+
+pkg:
+	@rm -rf ./packages ./All
+	@pkg -o IGNORE_OSVERSION=yes \
+		-o ABI=${ABI} \
+		-R /etc/pkg/ \
+		fetch \
+		-r FreeBSD \
+		-o . -yd  \
+		archivers/7-zip \
+		benchmarks/iperf3 \
+		devel/uclcmd \
+		ftp/curl \
+		misc/buffer \
+		net/mosh \
+		net/ngrep \
+		net/rsync \
+		ports-mgmt/pkg \
+		security/ca_root_nss \
+		security/hpenc \
+		sysutils/fd \
+		sysutils/htop \
+		sysutils/pwgen \
+		sysutils/tmux \
+		textproc/jq \
+		textproc/ripgrep \
+		www/gurl \
+
+	@mv All packages
+	@rm -rf packages/py2*

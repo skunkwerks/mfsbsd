@@ -6,8 +6,12 @@ mini/*.iso
 mini/*.img
 tmp/
 mini/tmp/
+/All/
 packages/*.txz
+packages/*.pkg
+customfiles/usr/freebsd-dist/*.txz
 mini/packages/*.txz
+mini/packages/*.pkg
 tools/pkg-static
 tools/roothack/.depend
 tools/roothack/.depend.roothack.o
