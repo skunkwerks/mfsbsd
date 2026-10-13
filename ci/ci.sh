@@ -55,10 +55,11 @@ build-mini)
 		cd mini
 		vmake clean
 		vmake iso RELEASE=${RELEASE} ROOTHACK=1 BASE=${BASE}
+		vmake RELEASE=${RELEASE} ROOTHACK=1 BASE=${BASE}
 		vmake clean
 	)
 	vmake clean
-	mv mini/*.iso .
+	mv mini/*.iso mini/*.img .
 	;;
 *)
 	echo "Unknown build step"
